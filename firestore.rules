@@ -1,0 +1,112 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default-deny all by default
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Health / connectivity check
+    match /test/{testId} {
+      allow get: if true;
+    }
+
+    // Common helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function isValidUserProfile(data, userId) {
+      return data.id is string
+        && data.id == userId
+        && data.name is string && data.name.size() <= 100
+        && data.email is string && data.email.size() <= 150
+        && data.dailyStepGoal is number && data.dailyStepGoal > 0 && data.dailyStepGoal <= 100000
+        && data.dailyActiveGoal is number && data.dailyActiveGoal > 0 && data.dailyActiveGoal <= 1440
+        && data.dailyWaterGoal is number && data.dailyWaterGoal > 0 && data.dailyWaterGoal <= 50;
+    }
+
+    function isValidActivity(data, userId) {
+      return data.userId == userId
+        && data.title is string && data.title.size() <= 100
+        && data.type is string && data.type.size() <= 30
+        && data.durationMinutes is number && data.durationMinutes >= 0 && data.durationMinutes <= 1440
+        && data.timeStr is string && data.timeStr.size() <= 30
+        && data.dateStr is string && data.dateStr.size() <= 20;
+    }
+
+    function isValidGoal(data, userId) {
+      return data.userId == userId
+        && data.title is string && data.title.size() <= 100
+        && data.current is number && data.current >= 0
+        && data.target is number && data.target > 0
+        && data.unit is string && data.unit.size() <= 30
+        && data.category is string && data.category.size() <= 30;
+    }
+
+    function isValidWaterLog(data, userId) {
+      return data.userId == userId
+        && data.timeStr is string && data.timeStr.size() <= 20
+        && data.glasses is number && data.glasses >= 0 && data.glasses <= 50
+        && data.ml is number && data.ml >= 0 && data.ml <= 10000
+        && data.dateStr is string && data.dateStr.size() <= 20;
+    }
+
+    function isValidBuddyConnection(data) {
+      return data.buddyId is string && data.buddyId.size() <= 128
+        && data.status is string && data.status.size() <= 30;
+    }
+
+    // User Profile Document
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUserProfile(incoming(), userId);
+      allow update: if isOwner(userId) && isValidUserProfile(incoming(), userId);
+      allow delete: if isOwner(userId);
+
+      // Subcollection: Activity Logs
+      match /activities/{activityId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(activityId) && isValidActivity(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(activityId) && isValidActivity(incoming(), userId);
+        allow delete: if isOwner(userId);
+      }
+
+      // Subcollection: Goals
+      match /goals/{goalId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(goalId) && isValidGoal(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(goalId) && isValidGoal(incoming(), userId);
+        allow delete: if isOwner(userId);
+      }
+
+      // Subcollection: Water Logs
+      match /waterLogs/{waterLogId} {
+        allow get, list: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidId(waterLogId) && isValidWaterLog(incoming(), userId);
+        allow update: if isOwner(userId) && isValidId(waterLogId) && isValidWaterLog(incoming(), userId);
+        allow delete: if isOwner(userId);
+      }
+
+      // Subcollection: Buddy Connections
+      match /buddyConnections/{buddyId} {
+        allow get, list: if isOwner(userId);
+        allow create, update: if isOwner(userId) && isValidId(buddyId) && isValidBuddyConnection(incoming());
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}
